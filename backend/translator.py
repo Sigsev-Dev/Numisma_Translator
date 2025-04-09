@@ -1,30 +1,32 @@
+import torch
 from transformers import MarianMTModel, MarianTokenizer
 from langdetect import detect
 
-# Load the multi-to-multi model once
+# Load the model on GPU if available
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 MODEL_PATH = "./models/Helsinki-NLP/opus-mt-mul-mul"
+
 tokenizer = MarianTokenizer.from_pretrained(MODEL_PATH)
-model = MarianMTModel.from_pretrained(MODEL_PATH)
+model = MarianMTModel.from_pretrained(MODEL_PATH).to(DEVICE)
 
 # Function to detect the language
 def detect_language(text):
-    """Detect the language of the input text."""
     return detect(text)
 
 # Function to translate text to the selected target language
 def translate_text(text, target_lang="eng"):
-    """Translate text from detected language to the target language."""
     source_lang = detect_language(text)
-    
-    # Ensure target language is a valid model token
     target_lang = target_lang.lower()
 
-    # Prepare text with language prefix
-    src_tgt_prefix = f">>{target_lang}<<"  # MarianMT models require ">>fr<<" for French
+    # Prefixing with >>{target_lang}<< for MarianMT
+    src_tgt_prefix = f">>{target_lang}<<"
     formatted_text = f"{src_tgt_prefix} {text}"
 
-    # Tokenize and translate
-    inputs = tokenizer(formatted_text, return_tensors="pt", padding=True, truncation=True)
-    translated = model.generate(**inputs)
+    # Tokenize and move tensors to the same device as model
+    inputs = tokenizer(formatted_text, return_tensors="pt", padding=True, truncation=True).to(DEVICE)
 
-    return tokenizer.batch_decode(translated, skip_special_tokens=True)[0], source_lang
+    with torch.no_grad():
+        outputs = model.generate(**inputs)
+
+    translated = tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
+    return translated, source_lang
